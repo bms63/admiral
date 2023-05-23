@@ -9,6 +9,7 @@ derive_param_computed(
   by_vars,
   parameters,
   analysis_value,
+  analysis_value_name = AVAL,
   set_values_to,
   filter = NULL,
   constant_by_vars = NULL,
@@ -43,11 +44,18 @@ derive the new parameter are specified for this parameter or the
 
 \item{analysis_value}{Definition of the analysis value
 
-An expression defining the analysis value (\code{AVAL}) of the new parameter is
+An expression defining the analysis value of the new parameter is
 expected. The analysis values of the parameters specified by \code{parameters}
-can be accessed using \verb{AVAL.<parameter code>}, e.g., \code{AVAL.SYSBP}.
+can be accessed using \verb{analysis_value_name.<parameter code>}, e.g., \code{AVAL.SYSBP}.
 
 \emph{Permitted Values:} An unquoted expression}
+
+\item{analysis_value_name}{Definition of name of the analysis variable
+
+An expression defining the analysis value name of the new parameter is
+expected. Default is \code{AVAL}
+
+\emph{Permitted Values:} An unquoted variable name}
 
 \item{set_values_to}{Variables to be set
 
@@ -100,7 +108,7 @@ For each group (with respect to the variables specified for the
 filtered input dataset contains exactly one observation for each parameter
 code specified for \code{parameters}.
 
-For the new observations \code{AVAL} is set to the value specified by
+For the new observations \code{analysis_value_name} is set to the value specified by
 \code{analysis_value} and the variables specified for \code{set_values_to} are set to
 the provided values. The values of the other variables of the input dataset
 are set to \code{NA}.
@@ -158,6 +166,44 @@ derive_param_computed(
   ),
   constant_parameters = c("HEIGHT"),
   constant_by_vars = exprs(USUBJID)
+)
+
+# Example 3: Derive BMI where height is measured only once
+adnews2 <- tribble(
+  ~USUBJID, ~PARAM, ~PARAMCD, ~PARAMN, ~RSORRES, ~AVAL,
+  "ABC-13-1305", "NEWS1-Respirations", "NEWS101", 1, "0", 0,
+  "ABC-13-1305", "NEWS1-Oxygen Saturation SpO2 Scale 1", "NEWS102", 2, "0", 0,
+  "ABC-13-1305", "NEWS1-Oxygen Saturation SpO2 Scale 2", "NEWS103", 3, "3", 3,
+  "ABC-13-1305", "NEWS1-Air or Oxygen", "NEWS104", 4, " ", NA,
+  "ABC-13-1305", "NEWS1-Air or Oxygen: Device", "NEWS104A", 5, " ", NA,
+  "ABC-13-1305", "NEWS1-Systolic Blood Pressure", "NEWS105", 6, "0", 0,
+  "ABC-13-1305", "NEWS1-Pulse", "NEWS106", 7, "0", 0,
+  "ABC-13-1305", "NEWS1-Consciousness", "NEWS107", 8, "1", 1,
+  "ABC-13-1305", "NEWS1-Temperature", "NEWS108", 9, "0", 0,
+  "ABC-13-1305", "NEWS1-NEWS Total", "NEWS109", 10, "4", 0,
+  "ABC-13-1305", "NEWS1-Monitoring Frequency (HOURS)", "NEWS110", 11, "0", 0,
+  "ABC-13-1305", "NEWS1-Escalation of Care", "NEWS111", 12, "0", 0,
+  "ABC-13-1305", "NEWS1-Total Score - Analysis", "NEWS1TS", 13, " ", 4,
+)
+
+adnews <- derive_param_computed(
+  adnews2,
+  by_vars = exprs(USUBJID),
+  parameters = c("NEWS101", "NEWS103", "NEWS1TS"),
+  analysis_value = (case_when(
+    AVAL.NEWS1TS <= 4 & (RSORRES.NEWS101 == "3" |
+      RSORRES.NEWS103 == "3") ~ "Low-Medium",
+    AVAL.NEWS1TS <= 4 ~ "Low",
+    AVAL.NEWS1TS > 4 & AVAL.NEWS1TS <= 6 ~ "Medium",
+    AVAL.NEWS1TS >= 7 ~ "High",
+    TRUE ~ NA_character_
+  )),
+  analysis_value_name = AVALC,
+  set_values_to = exprs(
+    PARAMCD = "NEWS1TRG",
+    PARAM = "NEWS1-Trigger - Analysis",
+    PARAMN = 14
+  )
 )
 }
 \seealso{

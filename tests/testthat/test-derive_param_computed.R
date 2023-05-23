@@ -1,4 +1,5 @@
-test_that("new observations are derived correctly", {
+## Test 1: new observations are derived correctly ----
+test_that("derive_param_computed Test 1: new observations are derived correctly", {
   input <- tibble::tribble(
     ~USUBJID, ~PARAMCD, ~PARAM, ~AVAL, ~AVALU, ~VISIT,
     "01-701-1015", "DIABP", "Diastolic Blood Pressure (mmHg)", 51, "mmHg", "BASELINE",
@@ -43,7 +44,8 @@ test_that("new observations are derived correctly", {
   )
 })
 
-test_that("new observations are derived correctly with constant parameters", {
+## Test 2: new observations are derived correctly with constant parameters ----
+test_that("derive_param_computed Test 2: new observations are derived correctly with constant parameters", {
   input <- tibble::tribble(
     ~USUBJID, ~PARAMCD, ~PARAM, ~AVAL, ~AVALU, ~VISIT,
     "01-701-1015", "HEIGHT", "Height (cm)", 147, "cm", "SCREENING",
@@ -90,7 +92,8 @@ test_that("new observations are derived correctly with constant parameters", {
   )
 })
 
-test_that("no new observations are added if filtered dataset is empty", {
+## Test 3: no new observations are added if filtered dataset is empty ----
+test_that("derive_param_computed Test 3: no new observations are added if filtered dataset is empty", {
   input <- tibble::tribble(
     ~USUBJID, ~PARAMCD, ~PARAM, ~AVAL, ~AVALU, ~VISIT,
     "01-701-1015", "DIABP", "Diastolic Blood Pressure (mmHg)", 51, "mmHg", "BASELINE",
@@ -123,7 +126,8 @@ test_that("no new observations are added if filtered dataset is empty", {
   )
 })
 
-test_that("no new observations are added if a parameter is missing", {
+## Test 4: no new observations are added if a parameter is missing ----
+test_that("derive_param_computed Test 4: no new observations are added if a parameter is missing", {
   input <- tibble::tribble(
     ~USUBJID, ~PARAMCD, ~PARAM, ~AVAL, ~AVALU, ~VISIT,
     "01-701-1015", "DIABP", "Diastolic Blood Pressure (mmHg)", 51, "mmHg", "BASELINE",
@@ -154,5 +158,75 @@ test_that("no new observations are added if a parameter is missing", {
         keys = c("USUBJID", "PARAMCD", "VISIT")
       ),
     "The input dataset does not contain any observations fullfiling the filter condition .*"
+  )
+})
+
+
+## Test 5: Usage of multiple variables from the source dataset in analysis_value expression ----
+test_that("derive_param_computed Test 5: Usage of multiple variables from the source dataset in analysis_value expression", {
+  input <- tibble::tribble(
+    ~USUBJID, ~PARAM, ~PARAMCD, ~PARAMN, ~RSORRES, ~AVAL,
+    "ABC-13-1305", "NEWS1-Respirations", "NEWS101", 1, "0", 0,
+    "ABC-13-1305", "NEWS1-Oxygen Saturation SpO2 Scale 1", "NEWS102", 2, "0", 0,
+    "ABC-13-1305", "NEWS1-Oxygen Saturation SpO2 Scale 2", "NEWS103", 3, "3", 3,
+    "ABC-13-1305", "NEWS1-Air or Oxygen", "NEWS104", 4, " ", NA,
+    "ABC-13-1305", "NEWS1-Air or Oxygen: Device", "NEWS104A", 5, " ", NA,
+    "ABC-13-1305", "NEWS1-Systolic Blood Pressure", "NEWS105", 6, "0", 0,
+    "ABC-13-1305", "NEWS1-Pulse", "NEWS106", 7, "0", 0,
+    "ABC-13-1305", "NEWS1-Consciousness", "NEWS107", 8, "1", 1,
+    "ABC-13-1305", "NEWS1-Temperature", "NEWS108", 9, "0", 0,
+    "ABC-13-1305", "NEWS1-NEWS Total", "NEWS109", 10, "4", 0,
+    "ABC-13-1305", "NEWS1-Monitoring Frequency (HOURS)", "NEWS110", 11, "0", 0,
+    "ABC-13-1305", "NEWS1-Escalation of Care", "NEWS111", 12, "0", 0,
+    "ABC-13-1305", "NEWS1-Total Score - Analysis", "NEWS1TS", 13, " ", 4,
+  )
+
+
+  new_obs <- inner_join(input %>% filter(PARAMCD == "NEWS103") %>% select(USUBJID, RSORRES),
+    input %>% filter(PARAMCD == "NEWS101") %>% select(USUBJID, RSORRES),
+    by = c("USUBJID"),
+    suffix = c(".NEWS103", ".NEWS101")
+  ) %>%
+    inner_join(input %>% filter(PARAMCD == "NEWS1TS") %>% select(USUBJID, AVAL),
+      by = c("USUBJID")
+    ) %>%
+    mutate(
+      AVALC = case_when(
+        AVAL <= 4 & (RSORRES.NEWS101 == "3" |
+          RSORRES.NEWS103 == "3") ~ "Low-Medium",
+        AVAL <= 4 ~ "Low",
+        AVAL > 4 & AVAL <= 6 ~ "Medium",
+        AVAL >= 7 ~ "High",
+        TRUE ~ NA_character_
+      ),
+      PARAMCD = "NEWS1TRG",
+      PARAM = "NEWS1-Trigger - Analysis",
+      PARAMN = 14
+    ) %>%
+    select(-RSORRES.NEWS103, -RSORRES.NEWS101, -AVAL)
+  expected_output <- bind_rows(input, new_obs)
+
+  expect_dfs_equal(
+    derive_param_computed(
+      input,
+      by_vars = exprs(USUBJID),
+      parameters = c("NEWS101", "NEWS103", "NEWS1TS"),
+      analysis_value = (case_when(
+        AVAL.NEWS1TS <= 4 & (RSORRES.NEWS101 == "3" |
+          RSORRES.NEWS103 == "3") ~ "Low-Medium",
+        AVAL.NEWS1TS <= 4 ~ "Low",
+        AVAL.NEWS1TS > 4 & AVAL.NEWS1TS <= 6 ~ "Medium",
+        AVAL.NEWS1TS >= 7 ~ "High",
+        TRUE ~ NA_character_
+      )),
+      analysis_value_name = AVALC,
+      set_values_to = exprs(
+        PARAMCD = "NEWS1TRG",
+        PARAM = "NEWS1-Trigger - Analysis",
+        PARAMN = 14
+      )
+    ),
+    expected_output,
+    keys = c("USUBJID", "PARAMCD")
   )
 })

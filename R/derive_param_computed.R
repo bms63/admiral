@@ -59,11 +59,18 @@
 #'
 #' @param analysis_value Definition of the analysis value
 #'
-#'   An expression defining the analysis value (`AVAL`) of the new parameter is
+#'   An expression defining the analysis value of the new parameter is
 #'   expected. The analysis values of the parameters specified by `parameters`
-#'   can be accessed using `AVAL.<parameter code>`, e.g., `AVAL.SYSBP`.
+#'   can be accessed using `analysis_value_name.<parameter code>`, e.g., `AVAL.SYSBP`.
 #'
 #'   *Permitted Values:* An unquoted expression
+#'
+#' @param analysis_value_name Definition of name of the analysis variable
+#'
+#'   An expression defining the analysis value name of the new parameter is
+#'   expected. Default is `AVAL`
+#'
+#'   *Permitted Values:* An unquoted variable name
 #'
 #' @param set_values_to Variables to be set
 #'
@@ -78,7 +85,7 @@
 #'   filtered input dataset contains exactly one observation for each parameter
 #'   code specified for `parameters`.
 #'
-#'   For the new observations `AVAL` is set to the value specified by
+#'   For the new observations `analysis_value_name` is set to the value specified by
 #'   `analysis_value` and the variables specified for `set_values_to` are set to
 #'   the provided values. The values of the other variables of the input dataset
 #'   are set to `NA`.
@@ -147,17 +154,56 @@
 #'   constant_parameters = c("HEIGHT"),
 #'   constant_by_vars = exprs(USUBJID)
 #' )
+#'
+#' # Example 3: Derive BMI where height is measured only once
+#' adnews2 <- tribble(
+#'   ~USUBJID, ~PARAM, ~PARAMCD, ~PARAMN, ~RSORRES, ~AVAL,
+#'   "ABC-13-1305", "NEWS1-Respirations", "NEWS101", 1, "0", 0,
+#'   "ABC-13-1305", "NEWS1-Oxygen Saturation SpO2 Scale 1", "NEWS102", 2, "0", 0,
+#'   "ABC-13-1305", "NEWS1-Oxygen Saturation SpO2 Scale 2", "NEWS103", 3, "3", 3,
+#'   "ABC-13-1305", "NEWS1-Air or Oxygen", "NEWS104", 4, " ", NA,
+#'   "ABC-13-1305", "NEWS1-Air or Oxygen: Device", "NEWS104A", 5, " ", NA,
+#'   "ABC-13-1305", "NEWS1-Systolic Blood Pressure", "NEWS105", 6, "0", 0,
+#'   "ABC-13-1305", "NEWS1-Pulse", "NEWS106", 7, "0", 0,
+#'   "ABC-13-1305", "NEWS1-Consciousness", "NEWS107", 8, "1", 1,
+#'   "ABC-13-1305", "NEWS1-Temperature", "NEWS108", 9, "0", 0,
+#'   "ABC-13-1305", "NEWS1-NEWS Total", "NEWS109", 10, "4", 0,
+#'   "ABC-13-1305", "NEWS1-Monitoring Frequency (HOURS)", "NEWS110", 11, "0", 0,
+#'   "ABC-13-1305", "NEWS1-Escalation of Care", "NEWS111", 12, "0", 0,
+#'   "ABC-13-1305", "NEWS1-Total Score - Analysis", "NEWS1TS", 13, " ", 4,
+#' )
+#'
+#' adnews <- derive_param_computed(
+#'   adnews2,
+#'   by_vars = exprs(USUBJID),
+#'   parameters = c("NEWS101", "NEWS103", "NEWS1TS"),
+#'   analysis_value = (case_when(
+#'     AVAL.NEWS1TS <= 4 & (RSORRES.NEWS101 == "3" |
+#'       RSORRES.NEWS103 == "3") ~ "Low-Medium",
+#'     AVAL.NEWS1TS <= 4 ~ "Low",
+#'     AVAL.NEWS1TS > 4 & AVAL.NEWS1TS <= 6 ~ "Medium",
+#'     AVAL.NEWS1TS >= 7 ~ "High",
+#'     TRUE ~ NA_character_
+#'   )),
+#'   analysis_value_name = AVALC,
+#'   set_values_to = exprs(
+#'     PARAMCD = "NEWS1TRG",
+#'     PARAM = "NEWS1-Trigger - Analysis",
+#'     PARAMN = 14
+#'   )
+#' )
 derive_param_computed <- function(dataset,
                                   by_vars,
                                   parameters,
                                   analysis_value,
+                                  analysis_value_name = AVAL,
                                   set_values_to,
                                   filter = NULL,
                                   constant_by_vars = NULL,
                                   constant_parameters = NULL) {
   assert_vars(by_vars)
   assert_vars(constant_by_vars, optional = TRUE)
-  assert_data_frame(dataset, required_vars = exprs(!!!by_vars, PARAMCD, AVAL))
+  assert_data_frame(dataset, required_vars = exprs(!!!by_vars, PARAMCD))
   filter <- assert_filter_cond(enexpr(filter), optional = TRUE)
   params_available <- unique(dataset$PARAMCD)
   assert_character_vector(parameters, values = params_available)
@@ -202,9 +248,6 @@ derive_param_computed <- function(dataset,
     return(dataset)
   }
 
-  data_parameters <- data_parameters %>%
-    select(!!!by_vars, PARAMCD, AVAL)
-
   signal_duplicate_records(
     data_parameters,
     by_vars = exprs(!!!by_vars, PARAMCD),
@@ -217,31 +260,39 @@ derive_param_computed <- function(dataset,
     )
   )
 
-  # horizontalize data, AVAL for PARAMCD = "PARAMx" -> AVAL.PARAMx
+  # horizontalize data, Variables for PARAMCD = "PARAMx" -> VARIABLE.PARAMx
   hori_data <- data_parameters %>%
-    pivot_wider(names_from = PARAMCD, values_from = AVAL, names_prefix = "AVAL.")
+    pivot_wider(
+      names_from = PARAMCD,
+      values_from = setdiff(names(.), by_vars),
+      names_glue = "{.value}.{PARAMCD}",
+      values_fill = NA
+    )
 
   if (!is.null(constant_parameters)) {
     data_const_parameters <- data_filtered %>%
-      filter(PARAMCD %in% constant_parameters) %>%
-      select(!!!exprs(!!!constant_by_vars, PARAMCD, AVAL))
+      filter(PARAMCD %in% constant_parameters)
 
     hori_const_data <- data_const_parameters %>%
-      pivot_wider(names_from = PARAMCD, values_from = AVAL, names_prefix = "AVAL.")
+      pivot_wider(
+        names_from = PARAMCD,
+        values_from = setdiff(names(.), constant_by_vars),
+        names_glue = "{.value}.{PARAMCD}",
+        values_fill = NA
+      )
 
     hori_data <- inner_join(hori_data, hori_const_data, by = vars2chr(constant_by_vars))
   }
 
+  pivoted_vars <- setdiff(names(hori_data), names(data_parameters))
+
   # add analysis value (AVAL) and parameter variables, e.g., PARAMCD
   hori_data <- hori_data %>%
-    # keep only observations where all analysis values are available
-    filter(!!!parse_exprs(map_chr(
-      c(parameters, constant_parameters),
-      ~ str_c("!is.na(AVAL.", .x, ")")
-    ))) %>%
-    process_set_values_to(exprs(AVAL = !!enexpr(analysis_value))) %>%
+    process_set_values_to(exprs(!!enexpr(analysis_value_name) := !!enexpr(analysis_value))) %>%
     process_set_values_to(set_values_to) %>%
-    select(-starts_with("AVAL."))
+    select(-pivoted_vars) %>%
+    # keep only observations where analysis values are available or eq to NaN
+    filter(!is.na(!!enexpr(analysis_value_name)) | is.nan(!!enexpr(analysis_value_name)))
 
   bind_rows(dataset, hori_data)
 }
