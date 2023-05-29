@@ -230,3 +230,65 @@ test_that("derive_param_computed Test 5: Usage of multiple variables from the so
     keys = c("USUBJID", "PARAMCD")
   )
 })
+
+
+
+
+## Test 6: Usage of expressions in param and usage of dataset_add input parameter ----
+test_that("derive_param_computed Test 6: Usage of expressions in param and usage of dataset_add input parameter", {
+  adnews <- tibble::tribble(
+    ~USUBJID, ~PARAM, ~PARAMCD, ~PARAMN, ~AVAL, ~RSORRES,
+    "ABC-13-1305", "NEWS1-Total Score - Analysis", "NEWS1TS", 13, 4, "4",
+  )
+
+
+  rs <- tibble::tribble(
+    ~USUBJID, ~RSTEST, ~RSTESTCD, ~RSORRES,
+    "ABC-13-1305", "NEWS1-Oxygen Saturation SpO2 Scale 1", "NEWS102", "0",
+    "ABC-13-1305", "NEWS1-Oxygen Saturation SpO2 Scale 2", "NEWS103", "3",
+    "ABC-13-1305", "NEWS1-Air or Oxygen", "NEWS104", " ",
+    "ABC-13-1305", "NEWS1-Air or Oxygen: Device", "NEWS104A", " ",
+    "ABC-13-1305", "NEWS1-Systolic Blood Pressure", "NEWS105", "0",
+    "ABC-13-1305", "NEWS1-Pulse", "NEWS106", "0",
+    "ABC-13-1305", "NEWS1-Consciousness", "NEWS107", "1",
+    "ABC-13-1305", "NEWS1-Temperature", "NEWS108", "0",
+    "ABC-13-1305", "NEWS1-NEWS Total", "NEWS109", "4",
+    "ABC-13-1305", "NEWS1-Monitoring Frequency (HOURS)", "NEWS110", "0",
+    "ABC-13-1305", "NEWS1-Escalation of Care", "NEWS111", "0",
+  )
+
+  expected_output <- bind_rows(
+    adnews,
+    tibble::tribble(
+      ~USUBJID, ~PARAM, ~PARAMCD, ~PARAMN, ~AVAL, ~RSORRES, ~AVALC,
+      "ABC-13-1305", "NEWS1-Trigger - Analysis", "NEWS1TRG", 14, NA, NA, "Low-Medium",
+    )
+  )
+
+  expect_dfs_equal(
+    derive_param_computed(
+      adnews,
+      dataset_add = rs,
+      by_vars = exprs(USUBJID),
+      parameters = exprs(
+        "NEWS1013" = RSTESTCD %in% c("NEWS103", "NEWS101"),
+        "NEWS1TS"
+      ),
+      analysis_value = (case_when(
+        AVAL.NEWS1TS <= 4 & (RSORRES.NEWS1013 == "3") ~ "Low-Medium",
+        AVAL.NEWS1TS <= 4 ~ "Low",
+        AVAL.NEWS1TS > 4 & AVAL.NEWS1TS <= 6 ~ "Medium",
+        AVAL.NEWS1TS >= 7 ~ "High",
+        TRUE ~ NA_character_
+      )),
+      analysis_value_name = AVALC,
+      set_values_to = exprs(
+        PARAMCD = "NEWS1TRG",
+        PARAM = "NEWS1-Trigger - Analysis",
+        PARAMN = 14
+      )
+    ),
+    expected_output,
+    keys = c("USUBJID", "PARAMCD")
+  )
+})

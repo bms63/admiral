@@ -16,6 +16,17 @@
 #'   the input dataset after restricting it by the filter condition (`filter`
 #'   parameter) and to the parameters specified by `parameters`.
 #'
+#' @param dataset_add Additional dataset
+#'
+#'   The variables specified by the `by_vars` parameter are expected.
+#'
+#'   The variable specified by `by_vars` and `PARAMCD` must be a unique key of
+#'   the additional dataset after restricting it to the parameters specified by
+#'   `parameters`.
+#'
+#'   If the argument is specified, the observations of the additional dataset
+#'   are considered in addition to the observations from the input dataset
+#'
 #' @param filter Filter condition
 #'
 #'   The specified condition is applied to the input dataset before deriving the
@@ -28,7 +39,10 @@
 #'
 #'   It is expected that all parameter codes (`PARAMCD`) which are required to
 #'   derive the new parameter are specified for this parameter or the
-#'   `constant_parameters` parameter.
+#'   `constant_parameters` parameter.  If an SDTM dataset is used, temporary parameter codes can be derived
+#'   by specifying a list of expressions. The name of the element defines the
+#'   temporary parameter code and the expression the condition for selecting the
+#'   records. For example ` parameters = exprs("NEWS1013" = RSTESTCD %in% c("NEWS103", "NEWS101"))`
 #'
 #'   *Permitted Values:* A character vector of `PARAMCD` values
 #'
@@ -193,6 +207,7 @@
 #'   )
 #' )
 derive_param_computed <- function(dataset,
+                                  dataset_add = NULL,
                                   by_vars,
                                   parameters,
                                   analysis_value,
@@ -205,8 +220,31 @@ derive_param_computed <- function(dataset,
   assert_vars(constant_by_vars, optional = TRUE)
   assert_data_frame(dataset, required_vars = exprs(!!!by_vars, PARAMCD))
   filter <- assert_filter_cond(enexpr(filter), optional = TRUE)
-  params_available <- unique(dataset$PARAMCD)
-  assert_character_vector(parameters, values = params_available)
+
+  # Bind datasets to use the appending of them during the pivoting
+  dataset_bind <- bind_rows(dataset, dataset_add)
+  param_custom <- c()
+  # Iterate over each element in the 'parameters' list
+  for (i in seq_along(parameters)) {
+    # If element of the list is a logical expression for new PARAMCD then
+    if (is.null(names(parameters[i])) || names(parameters[i]) == "") {
+      param_custom <- c(param_custom, parameters[[i]])
+    } else {
+      # If element of the list is PARAMCD that already exist
+      expression <- parameters[[i]]
+      dataset_bind <- dataset_bind %>%
+        mutate(
+          PARAMCD = if_else(!!enexpr(expression), names(parameters[i]), PARAMCD)
+        )
+      param_custom <- c(param_custom, names(parameters[i]))
+    }
+  }
+
+  param_custom <- as.character(unlist(param_custom))
+
+
+  params_available <- unique(dataset_bind$PARAMCD)
+  assert_character_vector(param_custom, values = params_available)
   assert_character_vector(constant_parameters, values = params_available, optional = TRUE)
   assert_varval_list(set_values_to)
   if (!is.null(set_values_to$PARAMCD)) {
@@ -214,11 +252,11 @@ derive_param_computed <- function(dataset,
   }
 
   # select observations and variables required for new observations
-  data_filtered <- dataset %>%
+  data_filtered <- dataset_bind %>%
     filter_if(filter)
 
   data_parameters <- data_filtered %>%
-    filter(PARAMCD %in% parameters)
+    filter(PARAMCD %in% param_custom)
 
   if (nrow(data_parameters) == 0L) {
     warn(
@@ -226,7 +264,7 @@ derive_param_computed <- function(dataset,
         "The input dataset does not contain any observations fullfiling the filter condition (",
         expr_label(filter),
         ") for the parameter codes (PARAMCD) ",
-        enumerate(parameters),
+        enumerate(param_custom),
         "\nNo new observations were added."
       )
     )
@@ -234,7 +272,7 @@ derive_param_computed <- function(dataset,
   }
 
   params_available <- unique(data_filtered$PARAMCD)
-  params_missing <- setdiff(c(parameters, constant_parameters), params_available)
+  params_missing <- setdiff(c(param_custom, constant_parameters), params_available)
   if (length(params_missing) > 0) {
     warn(
       paste0(

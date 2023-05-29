@@ -6,6 +6,7 @@
 \usage{
 derive_param_computed(
   dataset,
+  dataset_add = NULL,
   by_vars,
   parameters,
   analysis_value,
@@ -26,6 +27,17 @@ The variable specified by \code{by_vars} and \code{PARAMCD} must be a unique key
 the input dataset after restricting it by the filter condition (\code{filter}
 parameter) and to the parameters specified by \code{parameters}.}
 
+\item{dataset_add}{Additional dataset
+
+The variables specified by the \code{by_vars} parameter are expected.
+
+The variable specified by \code{by_vars} and \code{PARAMCD} must be a unique key of
+the additional dataset after restricting it to the parameters specified by
+\code{parameters}.
+
+If the argument is specified, the observations of the additional dataset
+are considered in addition to the observations from the input dataset}
+
 \item{by_vars}{Grouping variables
 
 For each group defined by \code{by_vars} an observation is added to the output
@@ -38,7 +50,10 @@ in the newly created records.
 
 It is expected that all parameter codes (\code{PARAMCD}) which are required to
 derive the new parameter are specified for this parameter or the
-\code{constant_parameters} parameter.
+\code{constant_parameters} parameter.  If an SDTM dataset is used, temporary parameter codes can be derived
+by specifying a list of expressions. The name of the element defines the
+temporary parameter code and the expression the condition for selecting the
+records. For example \code{ parameters = exprs("NEWS1013" = RSTESTCD \%in\% c("NEWS103", "NEWS101"))}
 
 \emph{Permitted Values:} A character vector of \code{PARAMCD} values}
 
