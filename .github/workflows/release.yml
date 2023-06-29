@@ -1,4 +1,4 @@
-name: Pull Request Action
+name: Pull Request Action v2
 on:
   push:
     branches:
