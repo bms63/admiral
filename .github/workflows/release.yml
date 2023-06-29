@@ -17,8 +17,8 @@ jobs:
           script: |
             const { repo, owner } = context.repo;
             const result = await github.rest.pulls.create({
-              title: '[Example] Simple demo',
-              owner,
+              title: 'Catch Patch/Hotfix Branch up from Main',
+              owner: bms63,
               repo,
               head: '${{ github.ref_name }}',
               base: 'patch',
