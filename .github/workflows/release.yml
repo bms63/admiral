@@ -1,8 +1,11 @@
 name: Pull Request Action v2
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
-      - feature/*
+      - main
 
 jobs:
   create-pull-request:
