@@ -24,8 +24,8 @@ jobs:
               base: 'patch',
               body: [
                 'This PR is auto-generated',
-                '[actions/github-script](https://github.com/actions/github-script).'
-                'This PR will catch up our patch branch from the main branch to prepare for hotfixes.',
+                '[actions/github-script](https://github.com/actions/github-script).',
+                'This PR will catch up our patch branch from the main branch to prepare for hotfixes.'
               ].join('\n')
             });
             github.rest.issues.addLabels({
