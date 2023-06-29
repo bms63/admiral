@@ -16,7 +16,7 @@ jobs:
       - name: pull-request
         uses: repo-sync/pull-request@v2
         with:
-          destination_branch: "devel"
+          destination_branch: "test"
           github_token: ${{ secrets.GITHUB_TOKEN }}
           pr_label: "feature, automated pr"
           pr_title: "[Example] Simple demo"
